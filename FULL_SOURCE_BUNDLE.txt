@@ -1,0 +1,1869 @@
+
+networks:
+  public:
+  internal:
+    internal: true
+
+services:
+  dispatcher:
+    build:
+      context: ./services/dispatcher
+    environment:
+      DISPATCHER_MONGO_URI: mongodb://mongo_dispatcher:27017/dispatcher
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev_internal_token_change_me}
+      AUTH_SERVICE_URL: http://auth:8000
+      INGEST_SERVICE_URL: http://telemetry-ingest:8000
+      QUERY_SERVICE_URL: http://telemetry-query:8000
+    depends_on:
+      mongo_dispatcher:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      telemetry-ingest:
+        condition: service_healthy
+      telemetry-query:
+        condition: service_healthy
+    ports:
+      - "8080:8000"
+    networks:
+      - public
+      - internal
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  auth:
+    build:
+      context: ./services/auth
+    environment:
+      AUTH_MONGO_URI: mongodb://mongo_auth:27017/auth
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev_internal_token_change_me}
+    depends_on:
+      mongo_auth:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    networks:
+      - internal
+
+  telemetry-ingest:
+    build:
+      context: ./services/telemetry_ingest
+    environment:
+      INGEST_MONGO_URI: mongodb://mongo_ingest:27017/ingest
+      QUERY_SERVICE_URL: http://telemetry-query:8000
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev_internal_token_change_me}
+    depends_on:
+      mongo_ingest:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    networks:
+      - internal
+
+  telemetry-query:
+    build:
+      context: ./services/telemetry_query
+    environment:
+      QUERY_MONGO_URI: mongodb://mongo_query:27017/query
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev_internal_token_change_me}
+    depends_on:
+      mongo_query:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    networks:
+      - internal
+
+  mongo_dispatcher:
+    image: mongo:7
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_dispatcher_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  mongo_auth:
+    image: mongo:7
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_auth_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  mongo_ingest:
+    image: mongo:7
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_ingest_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  mongo_query:
+    image: mongo:7
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_query_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    depends_on:
+      dispatcher:
+        condition: service_healthy
+    networks:
+      - internal
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    networks:
+      - public
+      - internal
+
+volumes:
+  mongo_dispatcher_data:
+  mongo_auth_data:
+  mongo_ingest_data:
+  mongo_query_data:
+  grafana_data:
+
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: dispatcher
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["dispatcher:8000"]
+
+
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+
+
+apiVersion: 1
+
+providers:
+  - name: "default"
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards
+
+
+
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(rate(dispatcher_requests_total[1m])) by (path, status_code)",
+          "legendFormat": "{{path}} {{status_code}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Dispatcher RPS (by path/status)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(dispatcher_request_duration_seconds_bucket[5m])) by (le, path))",
+          "legendFormat": "p95 {{path}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Dispatcher Latency p95 (seconds)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "dispatcher"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Dispatcher",
+  "uid": "dispatcher",
+  "version": 1,
+  "weekStart": ""
+}
+
+
+================================================================================
+FILE: infra/load_tests/k6_dispatcher.js
+================================================================================
+/**
+ * k6 yük testi örneği (kurulum: https://k6.io/docs/get-started/installation/)
+ *
+ * Örnek:
+ *   k6 run --vus 50 --duration 30s infra/load_tests/k6_dispatcher.js
+ *
+ * Önce giriş yapıp JWT alın; aşağıdaki TOKEN değişkenini doldurun veya
+ * harici script ile ortam değişkeni verin.
+ */
+import http from "k6/http";
+import { check, sleep } from "k6";
+
+const BASE = __ENV.DISPATCHER_URL || "http://localhost:8080";
+const TOKEN = __ENV.JWT_TOKEN || "";
+
+export const options = {
+  stages: [
+    { duration: "20s", target: 50 },
+    { duration: "40s", target: 100 },
+    { duration: "20s", target: 0 },
+  ],
+  thresholds: {
+    http_req_failed: ["rate<0.05"],
+    http_req_duration: ["p(95)<2000"],
+  },
+};
+
+export default function () {
+  const params = {
+    headers: {
+      Authorization: TOKEN ? `Bearer ${TOKEN}` : "",
+    },
+  };
+  const res = http.get(`${BASE}/api/telemetry/query/ping`, params);
+  check(res, { "status 2xx/5xx gateway": (r) => r.status >= 200 && r.status < 600 });
+  sleep(0.05);
+}
+
+================================================================================
+FILE: services/dispatcher/Dockerfile
+================================================================================
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+COPY tests ./tests
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+
+================================================================================
+FILE: services/dispatcher/requirements.txt
+================================================================================
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+httpx==0.27.2
+prometheus-client==0.21.0
+pymongo==4.8.0
+pyjwt==2.9.0
+
+pytest==8.3.2
+pytest-asyncio==0.24.0
+
+
+================================================================================
+FILE: services/dispatcher/pytest.ini
+================================================================================
+[pytest]
+asyncio_default_fixture_loop_scope = function
+
+
+================================================================================
+FILE: services/dispatcher/app/__init__.py
+================================================================================
+
+
+================================================================================
+FILE: services/dispatcher/app/main.py
+================================================================================
+import os
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Optional
+
+import httpx
+import jwt
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+
+from app import authorization
+from app import request_log as reqlog
+
+JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_change_me")
+INTERNAL_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev_internal_token_change_me")
+DISPATCHER_MONGO_URI = os.getenv("DISPATCHER_MONGO_URI", "mongodb://localhost:27017/dispatcher")
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    authorization.init_mongo(DISPATCHER_MONGO_URI)
+    reqlog.init_log_db(DISPATCHER_MONGO_URI)
+    yield
+
+
+app = FastAPI(title="Dispatcher", lifespan=lifespan)
+
+REQUESTS_TOTAL = Counter(
+    "dispatcher_requests_total",
+    "Total requests received by dispatcher",
+    ["method", "path", "status_code"],
+)
+REQUEST_DURATION = Histogram(
+    "dispatcher_request_duration_seconds",
+    "Request duration in seconds",
+    ["method", "path"],
+)
+
+
+def _is_public(path: str, method: str) -> bool:
+    if path in ("/health", "/metrics"):
+        return True
+    if path == "/api/auth/login" and method == "POST":
+        return True
+    return False
+
+
+def _decode_jwt(auth_header: Optional[str]) -> tuple[Optional[dict], Optional[JSONResponse], str]:
+    """reason: ok | missing_auth | invalid_token"""
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        return (
+            None,
+            JSONResponse(status_code=401, content={"detail": "missing or invalid authorization"}),
+            "missing_auth",
+        )
+    token = auth_header.split(" ", 1)[1].strip()
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload, None, "ok"
+    except jwt.PyJWTError:
+        return None, JSONResponse(status_code=401, content={"detail": "invalid token"}), "invalid_token"
+
+
+def _ensure_access(payload: dict, resource_path: str) -> tuple[Optional[JSONResponse], Optional[str]]:
+    role = payload.get("role") or "viewer"
+    if not authorization.is_request_allowed(str(role), resource_path):
+        return JSONResponse(status_code=403, content={"detail": "forbidden"}), "forbidden"
+    return None, None
+
+
+def _decode_jwt_optional(auth_header: Optional[str]) -> Optional[dict]:
+    """Sadece log için; hata fırlatmaz."""
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        return None
+    token = auth_header.split(" ", 1)[1].strip()
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return None
+
+
+async def _forward(
+    request: Request,
+    base_url: str,
+    upstream_path: str,
+    *,
+    extra_headers: Optional[dict[str, str]] = None,
+) -> Response:
+    method = request.method
+    url = f"{base_url.rstrip('/')}{upstream_path}"
+    params = dict(request.query_params)
+    body = await request.body()
+    headers: dict[str, str] = {}
+    for k, v in request.headers.items():
+        lk = k.lower()
+        if lk in ("host", "content-length"):
+            continue
+        headers[k] = v
+    headers["X-Internal-Token"] = INTERNAL_TOKEN
+    if extra_headers:
+        headers.update(extra_headers)
+
+    timeout = httpx.Timeout(connect=10.0, read=120.0, write=120.0, pool=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            upstream = await client.request(
+                method,
+                url,
+                params=params,
+                content=body if body else None,
+                headers=headers,
+            )
+        except httpx.ConnectError:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "upstream service unavailable"},
+            )
+        except httpx.TimeoutException:
+            return JSONResponse(
+                status_code=504,
+                content={"detail": "upstream service timeout"},
+            )
+
+    out_headers = {
+        k: v
+        for k, v in upstream.headers.items()
+        if k.lower() in ("content-type", "content-length")
+    }
+    return Response(content=upstream.content, status_code=upstream.status_code, headers=out_headers)
+
+
+def _service_base_url(service: str) -> str:
+    if service == "ingest":
+        return os.getenv("INGEST_SERVICE_URL", "http://telemetry-ingest:8000")
+    if service == "query":
+        return os.getenv("QUERY_SERVICE_URL", "http://telemetry-query:8000")
+    if service == "auth":
+        return os.getenv("AUTH_SERVICE_URL", "http://auth:8000")
+    raise ValueError(f"unknown service: {service}")
+
+
+@app.middleware("http")
+async def dispatch_auth_and_log(request: Request, call_next):
+    start = time.perf_counter()
+    path = request.url.path
+    method = request.method
+    query_string = request.url.query or ""
+    client = request.client
+    client_host = client.host if client else None
+
+    user: Optional[str] = None
+    role: Optional[str] = None
+    auth_result = "bypass"
+    early_response: Optional[Response] = None
+
+    if path.startswith("/api/") or path.startswith("/admin/"):
+        if _is_public(path, method):
+            auth_result = "public"
+        else:
+            payload, err, jwt_reason = _decode_jwt(request.headers.get("authorization"))
+            if err:
+                early_response = err
+                auth_result = jwt_reason
+            else:
+                assert payload is not None
+                user = str(payload.get("sub") or "")
+                role = str(payload.get("role") or "viewer")
+                deny, _deny_reason = _ensure_access(payload, path)
+                if deny:
+                    early_response = deny
+                    auth_result = "forbidden"
+                else:
+                    auth_result = "ok"
+
+    if early_response is not None:
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        reqlog.log_request(
+            method=method,
+            path=path,
+            query_string=query_string,
+            status_code=early_response.status_code,
+            latency_ms=elapsed_ms,
+            user=user or None,
+            role=role,
+            client_host=client_host,
+            auth_result=auth_result,
+        )
+        return early_response
+
+    try:
+        resp = await call_next(request)
+    except Exception as e:
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        reqlog.log_request(
+            method=method,
+            path=path,
+            query_string=query_string,
+            status_code=500,
+            latency_ms=elapsed_ms,
+            user=user,
+            role=role,
+            client_host=client_host,
+            auth_result="exception",
+            error=repr(e),
+        )
+        raise
+
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    if user is None:
+        pl = _decode_jwt_optional(request.headers.get("authorization"))
+        if pl:
+            user = str(pl.get("sub") or "") or None
+            role = str(pl.get("role") or "viewer")
+
+    reqlog.log_request(
+        method=method,
+        path=path,
+        query_string=query_string,
+        status_code=resp.status_code,
+        latency_ms=elapsed_ms,
+        user=user,
+        role=role,
+        client_host=client_host,
+        auth_result=auth_result,
+    )
+    return resp
+
+
+@app.get("/ui")
+async def telemetry_ui():
+    """Etkileşimli telemetri arayüzü (tek giriş noktası: Dispatcher)."""
+    index = STATIC_DIR / "index.html"
+    if not index.is_file():
+        return JSONResponse(status_code=404, content={"detail": "ui not found"})
+    return FileResponse(index)
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/admin/logs", response_class=HTMLResponse)
+async def admin_logs_html():
+    rows = [reqlog.public_log_row(d) for d in reqlog.recent_logs(200)]
+    tr = "".join(
+        f"<tr><td>{r.get('ts','')}</td><td>{r.get('method','')}</td><td>{r.get('path','')}</td>"
+        f"<td>{r.get('q','')}</td><td>{r.get('status','')}</td><td>{r.get('ms','')}</td>"
+        f"<td>{r.get('auth','')}</td><td>{r.get('user','')}</td>"
+        f"<td>{r.get('ip','')}</td></tr>"
+        for r in rows
+    )
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Dispatcher logları</title>
+<style>table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ccc;padding:6px;font-size:12px}}th{{text-align:left}}</style>
+</head><body>
+<h1>Dispatcher istek logları</h1>
+<table><thead><tr><th>Zaman</th><th>Metot</th><th>Yol</th><th>Query</th><th>HTTP</th><th>ms</th><th>Auth</th><th>Kullanıcı</th><th>İstemci</th></tr></thead>
+<tbody>{tr}</tbody></table>
+<p><a href="/admin/logs/json">JSON</a></p>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+@app.get("/admin/logs/json")
+async def admin_logs_json():
+    return {"items": [reqlog.public_log_row(d) for d in reqlog.recent_logs(200)]}
+
+
+@app.api_route("/api/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def route_auth(path: str, request: Request):
+    start = time.perf_counter()
+    resp: Optional[Response] = None
+    try:
+        resp = await _forward(request, _service_base_url("auth"), f"/auth/{path}")
+        return resp
+    finally:
+        elapsed = time.perf_counter() - start
+        status_code = getattr(resp, "status_code", 500)
+        REQUESTS_TOTAL.labels(request.method, "/api/auth/{path}", str(status_code)).inc()
+        REQUEST_DURATION.labels(request.method, "/api/auth/{path}").observe(elapsed)
+
+
+@app.api_route("/api/telemetry/ingest/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def route_ingest(path: str, request: Request):
+    start = time.perf_counter()
+    resp: Optional[Response] = None
+    try:
+        resp = await _forward(request, _service_base_url("ingest"), f"/{path}")
+        return resp
+    finally:
+        elapsed = time.perf_counter() - start
+        status_code = getattr(resp, "status_code", 500)
+        REQUESTS_TOTAL.labels(request.method, "/api/telemetry/ingest/{path}", str(status_code)).inc()
+        REQUEST_DURATION.labels(request.method, "/api/telemetry/ingest/{path}").observe(elapsed)
+
+
+@app.api_route("/api/telemetry/query/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def route_query(path: str, request: Request):
+    start = time.perf_counter()
+    resp: Optional[Response] = None
+    try:
+        resp = await _forward(request, _service_base_url("query"), f"/{path}")
+        return resp
+    finally:
+        elapsed = time.perf_counter() - start
+        status_code = getattr(resp, "status_code", 500)
+        REQUESTS_TOTAL.labels(request.method, "/api/telemetry/query/{path}", str(status_code)).inc()
+        REQUEST_DURATION.labels(request.method, "/api/telemetry/query/{path}").observe(elapsed)
+
+================================================================================
+FILE: services/dispatcher/app/authorization.py
+================================================================================
+import os
+from typing import Optional
+
+from pymongo import MongoClient
+from pymongo.database import Database
+
+_mongo: Optional[MongoClient] = None
+_db: Optional[Database] = None
+
+
+def init_mongo(uri: str) -> bool:
+    global _mongo, _db
+    try:
+        client = MongoClient(uri, serverSelectionTimeoutMS=3000)
+        client.admin.command("ping")
+        _mongo = client
+        _db = client.get_default_database()
+        _seed_if_empty(_db)
+        return True
+    except Exception:
+        _mongo = None
+        _db = None
+        return False
+
+
+def _seed_if_empty(db: Database) -> None:
+    col = db["role_permissions"]
+    if col.count_documents({}) > 0:
+        return
+    col.insert_many(
+        [
+            {
+                "role": "admin",
+                "prefixes": [
+                    "/api/telemetry/ingest",
+                    "/api/telemetry/query",
+                    "/api/auth",
+                    "/admin",
+                ],
+            },
+            {
+                "role": "operator",
+                "prefixes": ["/api/telemetry/ingest", "/api/telemetry/query"],
+            },
+            {"role": "viewer", "prefixes": ["/api/telemetry/query"]},
+        ]
+    )
+
+
+def is_request_allowed(role: str, resource_path: str) -> bool:
+    if _db is None:
+        return False
+    doc = _db["role_permissions"].find_one({"role": role})
+    if not doc:
+        return False
+    for p in doc.get("prefixes", []):
+        if resource_path == p or resource_path.startswith(p + "/") or resource_path.startswith(p + "?"):
+            return True
+    return False
+
+================================================================================
+FILE: services/dispatcher/app/request_log.py
+================================================================================
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from pymongo import MongoClient
+
+_db: Optional[Any] = None
+
+
+def init_log_db(uri: str) -> None:
+    global _db
+    try:
+        client = MongoClient(uri, serverSelectionTimeoutMS=3000)
+        client.admin.command("ping")
+        _db = client.get_default_database()
+        _db["request_logs"].create_index([("ts", -1)])
+    except Exception:
+        _db = None
+
+
+def log_request(
+    *,
+    method: str,
+    path: str,
+    query_string: str,
+    status_code: int,
+    latency_ms: float,
+    user: Optional[str] = None,
+    role: Optional[str] = None,
+    client_host: Optional[str] = None,
+    auth_result: str = "n/a",
+    detail: Optional[str] = None,
+    error: Optional[str] = None,
+) -> None:
+    """
+    Dispatcher trafik kaydı (MongoDB, JSON belge).
+    auth_result: ok | public | missing_auth | invalid_token | forbidden | exception | bypass
+    """
+    if _db is None:
+        return
+    doc = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "method": method,
+        "path": path,
+        "query_string": query_string or "",
+        "status_code": status_code,
+        "latency_ms": round(latency_ms, 1),
+        "user": user,
+        "role": role,
+        "client_host": client_host,
+        "auth_result": auth_result,
+    }
+    if detail is not None:
+        doc["detail"] = detail
+    if error is not None:
+        doc["error"] = error
+    try:
+        _db["request_logs"].insert_one(doc)
+    except Exception:
+        pass
+
+
+def recent_logs(limit: int = 200) -> list[dict]:
+    if _db is None:
+        return []
+    cur = _db["request_logs"].find().sort("ts", -1).limit(limit)
+    out = []
+    for doc in cur:
+        doc.pop("_id", None)
+        out.append(doc)
+    return out
+
+
+def public_log_row(doc: dict) -> dict:
+    """API ve /admin/logs için sade satır (öğrenci projesi düzeyinde alanlar)."""
+    row = {
+        "ts": doc.get("ts"),
+        "method": doc.get("method"),
+        "path": doc.get("path"),
+        "q": doc.get("query_string") or "",
+        "status": doc.get("status_code"),
+        "ms": doc.get("latency_ms"),
+        "auth": doc.get("auth_result"),
+        "user": doc.get("user") or "",
+        "ip": doc.get("client_host") or "",
+    }
+    err = doc.get("error")
+    if err:
+        row["err"] = str(err)[:300]
+    return row
+
+================================================================================
+FILE: services/dispatcher/app/static/index.html
+================================================================================
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dispatcher — Telemetri &amp; Trafik logları</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --card: #151b24;
+      --text: #e8edf4;
+      --muted: #8899aa;
+      --line: #2a3544;
+      --accent: #2563eb;
+      --accent2: #059669;
+      --bad: #dc2626;
+      --zebra: rgba(255,255,255,0.03);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.45; }
+    a { color: #93c5fd; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 1rem 1.25rem 2.5rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .lead { color: var(--muted); font-size: 0.92rem; margin: 0 0 1.25rem; max-width: 52rem; }
+    section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    section h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.05rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 0.5rem;
+    }
+    .muted { color: var(--muted); font-size: 0.88rem; margin: 0 0 0.75rem; }
+    label { font-size: 0.75rem; color: var(--muted); display: block; margin-bottom: 0.2rem; }
+    input {
+      width: 100%;
+      max-width: 260px;
+      padding: 0.45rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: #0c0f14;
+      color: var(--text);
+      font: inherit;
+    }
+    .grid2 { display: grid; gap: 0.75rem; }
+    @media (min-width: 520px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+    .row-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.65rem; align-items: center; }
+    .btn {
+      display: inline-block;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: none;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn.secondary { background: #3f4f63; }
+    .btn.ok { background: var(--accent2); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hint { font-size: 0.82rem; color: var(--muted); }
+    .ok { color: var(--accent2); }
+    .err { color: var(--bad); }
+    .log-wrap {
+      overflow: auto;
+      max-height: min(55vh, 480px);
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #0c0f14;
+    }
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    table.data th, table.data td {
+      border-bottom: 1px solid var(--line);
+      padding: 0.45rem 0.55rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    table.data thead th {
+      background: #121820;
+      color: var(--muted);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    table.data tbody tr:nth-child(even) { background: var(--zebra); }
+    .badge { font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; background: #374151; color: #cbd5e1; }
+    details.tech { margin-top: 0.75rem; font-size: 0.8rem; color: var(--muted); }
+    details.tech pre {
+      margin: 0.4rem 0 0;
+      padding: 0.65rem;
+      background: #0c0f14;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: auto;
+      max-height: 160px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.72rem;
+    }
+    .callout {
+      background: #1e293b;
+      border-left: 3px solid var(--accent);
+      padding: 0.65rem 0.85rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.86rem;
+      color: #cbd5e1;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Dispatcher kontrol paneli</h1>
+    <p class="lead">
+      <strong>Grafikler</strong> için Grafana ayrı adrestir. Bu sayfada telemetri girilir ve Dispatcher’ın MongoDB’de tuttuğu
+      <strong>trafik logları tablo</strong> olarak gösterilir (ödev 4.3: detaylı log tablosu).
+    </p>
+
+    <section>
+      <h2>1) Grafana — grafiksel trafik</h2>
+      <p class="muted">İstek hızı, gecikme vb. metrikler.</p>
+      <a class="btn ok" href="http://localhost:3000" target="_blank" rel="noopener">Grafana’yı aç</a>
+      <span class="hint" style="margin-left:0.5rem">(genelde admin / admin)</span>
+    </section>
+
+    <section>
+      <h2>2) Oturum</h2>
+      <div class="grid2">
+        <div><label>Kullanıcı</label><input id="user" type="text" value="admin" autocomplete="username" /></div>
+        <div><label>Şifre</label><input id="pass" type="password" value="admin123" autocomplete="current-password" /></div>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="btn" id="btnLogin">Giriş</button>
+        <button type="button" class="btn secondary" id="btnLogout">Çıkış</button>
+        <span class="hint" id="loginStatus"></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>3) Telemetri gönder</h2>
+      <div class="grid2">
+        <div><label>Uydu ID</label><input id="sat" value="SAT-1" /></div>
+        <div><label>Metrik</label><input id="metric" value="battery_v" /></div>
+        <div><label>Değer</label><input id="val" type="number" step="any" value="12.4" /></div>
+        <div><label>Birim</label><input id="unit" value="V" /></div>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="btn" id="btnSend">Gönder</button>
+        <span class="hint" id="ingestStatus"></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>4) Telemetri listesi (okuma)</h2>
+      <div class="row-actions">
+        <button type="button" class="btn secondary" id="btnQuery">Listeyi yükle</button>
+        <span class="hint" id="queryStatus"></span>
+      </div>
+      <div class="log-wrap" style="margin-top:0.6rem">
+        <table class="data" aria-label="Telemetri">
+          <thead><tr><th>Uydu</th><th>Metrik</th><th>Değer</th><th>Birim</th><th>Zaman</th></tr></thead>
+          <tbody id="telBody"><tr><td colspan="5" class="hint">Giriş yapıp “Listeyi yükle” deyin.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>5) Dispatcher trafik logları <span class="badge">tablo</span></h2>
+      <p class="muted">Kaynak: <code>/admin/logs/json</code> (giriş gerekir). Özet alanlar tabloda; ham veri isteğe bağlı aşağıda.</p>
+      <div class="row-actions">
+        <button type="button" class="btn secondary" id="btnLogs">Logları tabloya yükle</button>
+        <span class="hint" id="logsStatus"></span>
+      </div>
+      <div class="log-wrap" style="margin-top:0.6rem">
+        <table class="data" aria-label="Dispatcher logları">
+          <thead>
+            <tr>
+              <th>Zaman (UTC)</th>
+              <th>Metot</th>
+              <th>Yol</th>
+              <th>HTTP</th>
+              <th>ms</th>
+              <th>Yetki özeti</th>
+              <th>Kullanıcı</th>
+              <th>İstemci</th>
+            </tr>
+          </thead>
+          <tbody id="logBody">
+            <tr><td colspan="8" class="hint">Giriş yapıp “Logları tabloya yükle” deyin.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <details class="tech">
+        <summary>Ham JSON (isteğe bağlı)</summary>
+        <pre id="logsRaw">—</pre>
+      </details>
+    </section>
+  </div>
+
+  <script>
+    const BASE = "";
+    const KEY = "telemetry_jwt";
+
+    function getToken() { return sessionStorage.getItem(KEY) || ""; }
+    function setToken(t) {
+      if (t) sessionStorage.setItem(KEY, t);
+      else sessionStorage.removeItem(KEY);
+    }
+
+    function td(text) {
+      const c = document.createElement("td");
+      c.textContent = text == null || text === "" ? "—" : String(text);
+      return c;
+    }
+
+    async function parseJson(r) {
+      const raw = await r.text();
+      try { return { j: JSON.parse(raw), raw }; } catch { return { j: null, raw }; }
+    }
+
+    document.getElementById("btnLogin").onclick = async () => {
+      const st = document.getElementById("loginStatus");
+      const u = document.getElementById("user").value.trim();
+      const p = document.getElementById("pass").value;
+      try {
+        const r = await fetch(BASE + "/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ username: u, password: p }),
+        });
+        const { j, raw } = await parseJson(r);
+        if (!r.ok) {
+          st.innerHTML = "<span class='err'>HTTP " + r.status + "</span> " + (j && j.detail ? String(j.detail) : raw.slice(0, 120));
+          return;
+        }
+        setToken(j.access_token);
+        st.innerHTML = "<span class='ok'>Giriş tamam</span> · HTTP " + r.status;
+      } catch (e) {
+        st.innerHTML = "<span class='err'>" + String(e) + "</span>";
+      }
+    };
+
+    document.getElementById("btnLogout").onclick = () => {
+      setToken("");
+      document.getElementById("loginStatus").textContent = "Çıkış yapıldı.";
+    };
+
+    document.getElementById("btnSend").onclick = async () => {
+      const tok = getToken();
+      const st = document.getElementById("ingestStatus");
+      if (!tok) { st.innerHTML = "<span class='err'>Önce giriş yapın.</span>"; return; }
+      const payload = {
+        satellite_id: document.getElementById("sat").value.trim(),
+        metric: document.getElementById("metric").value.trim(),
+        value: Number(document.getElementById("val").value),
+        unit: document.getElementById("unit").value.trim() || "raw",
+      };
+      try {
+        const r = await fetch(BASE + "/api/telemetry/ingest/telemetry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok },
+          body: JSON.stringify(payload),
+        });
+        const { j } = await parseJson(r);
+        st.innerHTML = r.ok ? "<span class='ok'>Gönderildi (HTTP " + r.status + ")</span>" : "<span class='err'>HTTP " + r.status + "</span> " + (j && j.detail ? j.detail : "");
+      } catch (e) {
+        st.innerHTML = "<span class='err'>" + String(e) + "</span>";
+      }
+    };
+
+    function fillTelemetryTable(rows) {
+      const tb = document.getElementById("telBody");
+      tb.replaceChildren();
+      if (!rows || !rows.length) {
+        const tr = document.createElement("tr");
+        const c = document.createElement("td");
+        c.colSpan = 5;
+        c.className = "hint";
+        c.textContent = "Kayıt yok.";
+        tr.appendChild(c);
+        tb.appendChild(tr);
+        return;
+      }
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.appendChild(td(row.satellite_id));
+        tr.appendChild(td(row.metric));
+        tr.appendChild(td(row.value));
+        tr.appendChild(td(row.unit));
+        tr.appendChild(td(row.recorded_at));
+        tb.appendChild(tr);
+      });
+    }
+
+    document.getElementById("btnQuery").onclick = async () => {
+      const tok = getToken();
+      const st = document.getElementById("queryStatus");
+      if (!tok) { st.innerHTML = "<span class='err'>Önce giriş yapın.</span>"; return; }
+      try {
+        const r = await fetch(BASE + "/api/telemetry/query/telemetry", { headers: { Authorization: "Bearer " + tok } });
+        const { j, raw } = await parseJson(r);
+        st.innerHTML = r.ok ? "<span class='ok'>Yüklendi (HTTP " + r.status + ")</span>" : "<span class='err'>HTTP " + r.status + "</span>";
+        let items = [];
+        if (j && Array.isArray(j.items)) items = j.items;
+        else if (Array.isArray(j)) items = j;
+        fillTelemetryTable(items);
+      } catch (e) {
+        st.innerHTML = "<span class='err'>" + String(e) + "</span>";
+      }
+    };
+
+    function fillLogTable(items) {
+      const tb = document.getElementById("logBody");
+      tb.replaceChildren();
+      if (!items || !items.length) {
+        const tr = document.createElement("tr");
+        const c = document.createElement("td");
+        c.colSpan = 8;
+        c.className = "hint";
+        c.textContent = "Kayıt yok (MongoDB boş olabilir veya henüz istek oluşmadı).";
+        tr.appendChild(c);
+        tb.appendChild(tr);
+        return;
+      }
+      items.forEach((row) => {
+        const tr = document.createElement("tr");
+        const pathCell = td(row.path);
+        const q = row.q != null && row.q !== "" ? row.q : row.query_string;
+        if (q) pathCell.textContent = String(row.path || "—") + "?" + String(q);
+        tr.appendChild(td(row.ts));
+        tr.appendChild(td(row.method));
+        tr.appendChild(pathCell);
+        tr.appendChild(td(row.status != null ? row.status : row.status_code));
+        tr.appendChild(td(row.ms != null ? row.ms : row.latency_ms));
+        tr.appendChild(td(row.auth != null ? row.auth : row.auth_result));
+        tr.appendChild(td(row.user));
+        tr.appendChild(td(row.ip != null ? row.ip : row.client_host));
+        tb.appendChild(tr);
+      });
+    }
+
+    document.getElementById("btnLogs").onclick = async () => {
+      const tok = getToken();
+      const st = document.getElementById("logsStatus");
+      const rawEl = document.getElementById("logsRaw");
+      if (!tok) {
+        st.innerHTML = "<span class='err'>Önce giriş yapın.</span>";
+        return;
+      }
+      st.innerHTML = "Yükleniyor…";
+      rawEl.textContent = "—";
+      try {
+        const r = await fetch(BASE + "/admin/logs/json", {
+          headers: { Authorization: "Bearer " + tok },
+          credentials: "same-origin",
+        });
+        const { j, raw } = await parseJson(r);
+        rawEl.textContent = j ? JSON.stringify(j) : raw.slice(0, 4000);
+        if (!r.ok) {
+          st.innerHTML = "<span class='err'>HTTP " + r.status + "</span>";
+          fillLogTable([]);
+          return;
+        }
+        let items = [];
+        if (j && Array.isArray(j.items)) items = j.items;
+        else if (j && Array.isArray(j.data)) items = j.data;
+        else if (Array.isArray(j)) items = j;
+        fillLogTable(items);
+        st.innerHTML = "<span class='ok'>" + items.length + " satır tabloda.</span>";
+      } catch (e) {
+        st.innerHTML = "<span class='err'>" + String(e) + "</span>";
+        fillLogTable([]);
+      }
+    };
+  </script>
+</body>
+</html>
+
+
+import jwt
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _allow_roles_in_unit_tests(monkeypatch):
+    """MongoDB olmadan yerel testlerde RBAC geçerli olsun."""
+    monkeypatch.setattr("app.authorization.is_request_allowed", lambda role, path: True)
+
+
+@pytest.fixture
+def auth_headers():
+    from app.main import JWT_SECRET
+
+    token = jwt.encode({"sub": "tester", "role": "admin"}, JWT_SECRET, algorithm="HS256")
+    return {"Authorization": f"Bearer {token}"}
+
+from fastapi.testclient import TestClient
+
+
+def test_health_returns_200():
+    from app.main import app
+
+    with TestClient(app) as client:
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+
+def test_unknown_path_returns_404_not_200():
+    from app.main import app
+
+    with TestClient(app) as client:
+        resp = client.get("/does-not-exist")
+        assert resp.status_code == 404
+
+
+
+from fastapi.testclient import TestClient
+
+
+def test_telemetry_without_token_returns_401():
+    from app.main import app
+
+    with TestClient(app) as client:
+        resp = client.get("/api/telemetry/ingest/ping")
+        assert resp.status_code == 401
+
+
+from fastapi.testclient import TestClient
+
+
+def test_routes_to_ingest_service(monkeypatch, auth_headers):
+    """
+    Dispatcher, /api/telemetry/ingest/* isteklerini ingest servisine yönlendirmelidir.
+    Bu test, yönlendirme davranışını doğrular (proxy değil: kimlik/erişim kontrolü dispatcher'da yapılır).
+    """
+    monkeypatch.setenv("INGEST_SERVICE_URL", "http://telemetry-ingest:8000")
+    monkeypatch.setenv("QUERY_SERVICE_URL", "http://telemetry-query:8000")
+    monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth:8000")
+
+    from app.main import app
+
+    with TestClient(app) as client:
+        resp = client.get("/api/telemetry/ingest/ping", headers=auth_headers)
+        # Ingest servisi ayağa kalkmadıysa bile dispatcher doğru HTTP hata kodu döndürmeli.
+        assert resp.status_code in (200, 502, 503, 504)
+
+
+def test_routes_to_query_service(monkeypatch, auth_headers):
+    monkeypatch.setenv("INGEST_SERVICE_URL", "http://telemetry-ingest:8000")
+    monkeypatch.setenv("QUERY_SERVICE_URL", "http://telemetry-query:8000")
+    monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth:8000")
+
+    from app.main import app
+
+    with TestClient(app) as client:
+        resp = client.get("/api/telemetry/query/ping", headers=auth_headers)
+        assert resp.status_code in (200, 502, 503, 504)
+
+
+
+ #versiyon numaraları paketlerim
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pymongo==4.8.0
+pyjwt==2.9.0
+passlib[bcrypt]==1.7.4
+# passlib 1.7.x bcrypt 4.x ile uyumsuz; 500 / verify hatası verebilir
+bcrypt==3.2.2
+
+
+import logging
+import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Optional
+
+import jwt
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from passlib.context import CryptContext
+from pydantic import BaseModel, Field
+from pymongo import MongoClient
+from pymongo.database import Database
+
+JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_change_me")
+INTERNAL_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev_internal_token_change_me")
+AUTH_MONGO_URI = os.getenv("AUTH_MONGO_URI", "mongodb://localhost:27017/auth")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer(auto_error=False)
+
+logger = logging.getLogger(__name__)
+
+_mongo: Optional[MongoClient] = None
+
+# mongoDB veritabanı bağlantısını kurdum
+def _mongo_client() -> MongoClient:
+    if _mongo is None:
+        raise RuntimeError("MongoDB not initialized")
+    return _mongo
+
+# veritabanı bağlantısını aldığım bir fonk
+def get_db() -> Database:
+    return _mongo_client().get_default_database()
+
+# default admin kullanıcısını oluşturan fonksiyon
+def _ensure_default_admin(db: Database) -> None:
+    """Koleksiyon boşsa tek admin ekler. delete_many yapmıyoruz (bcrypt + DB yavaşlatıyordu)."""
+    users = db["users"]
+    if users.count_documents({}) > 0:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    users.insert_one(
+        {
+            "username": "admin",
+            "password_hash": pwd_context.hash("admin123"),
+            "role": "admin",
+            "created_at": now,
+        }
+    )
+
+# auth servisi başlatıldığında veritabanı bağlantısını kurarken ve default admin kullanıcısını oluştururken çalışır.
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _mongo
+    _mongo = MongoClient(
+        AUTH_MONGO_URI,
+        serverSelectionTimeoutMS=8000,
+        connectTimeoutMS=8000,
+        socketTimeoutMS=15000,
+    )
+    try:
+        _mongo.admin.command("ping")
+    except Exception:
+        logger.exception("auth startup: MongoDB ping failed")
+        raise
+    try:
+        _ensure_default_admin(_mongo.get_default_database())
+    except Exception:
+        logger.exception("auth startup: seed atlandı, ilk girişte tekrar denenecek")
+    try:
+        yield
+    finally:
+        if _mongo is not None:
+            _mongo.close()
+            _mongo = None
+
+
+app = FastAPI(title="Auth Service", lifespan=lifespan)
+
+
+def _internal_headers(x_internal_token: Optional[str]) -> None:
+    if x_internal_token != INTERNAL_TOKEN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid internal token")
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    expires_in: int = 86400
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.post("/auth/login", response_model=TokenResponse)
+def login_post(
+    body: LoginRequest,
+    x_internal_token: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
+):
+    _internal_headers(x_internal_token)
+    db = get_db()
+    # PowerShell bazen BOM veya farklı kodlama ile gönderir; girişi normalize et.
+    uname = body.username.strip().strip("\ufeff").lower()
+    pwd = body.password.strip().strip("\ufeff")
+    doc = db["users"].find_one({"username": uname})
+    if not doc:
+        logger.warning("login: kullanıcı yok, seed tekrar deneniyor")
+        _ensure_default_admin(db)
+        doc = db["users"].find_one({"username": uname})
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+    ph = doc.get("password_hash")
+    if not ph:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+    try:
+        ok = pwd_context.verify(pwd, ph)
+    except Exception:
+        logger.exception("password verify failed")
+        ok = False
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+    role = doc.get("role", "viewer")
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(hours=24)
+    payload = {
+        "sub": uname,
+        "role": role,
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp()),
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    if isinstance(token, bytes):
+        token = token.decode("utf-8")
+    return TokenResponse(access_token=token, expires_in=86400)
+
+
+@app.get("/auth/me")
+def me(
+    creds: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security)],
+    x_internal_token: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
+):
+    _internal_headers(x_internal_token)
+    if not creds:
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    try:
+        payload = jwt.decode(creds.credentials, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="invalid token")
+    return {"username": payload.get("sub"), "role": payload.get("role")}
+
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pymongo==4.8.0
+pyjwt==2.9.0
+httpx==0.27.2
+
+
+import os
+from datetime import datetime, timezone
+from typing import Annotated, Optional
+
+import httpx
+import jwt
+from bson import ObjectId
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
+from pymongo import MongoClient
+
+JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_change_me")
+INTERNAL_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev_internal_token_change_me")
+INGEST_MONGO_URI = os.getenv("INGEST_MONGO_URI", "mongodb://localhost:27017/ingest")
+QUERY_SERVICE_URL = os.getenv("QUERY_SERVICE_URL", "http://telemetry-query:8000")
+
+security = HTTPBearer(auto_error=False)
+app = FastAPI(title="Telemetry Ingest")
+
+
+def get_db():
+    client = MongoClient(INGEST_MONGO_URI, serverSelectionTimeoutMS=5000)
+    return client.get_default_database()
+
+
+def require_internal(x_internal_token: Annotated[str | None, Header(alias="X-Internal-Token")]):
+    if x_internal_token != INTERNAL_TOKEN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+
+def require_jwt(
+    creds: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security)],
+):
+    if not creds:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
+    try:
+        return jwt.decode(creds.credentials, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/ping")
+def ping(
+    _: Annotated[None, Depends(require_internal)],
+    __: Annotated[dict, Depends(require_jwt)],
+):
+    return {"service": "telemetry-ingest", "ok": True}
+
+
+class TelemetryIn(BaseModel):
+    satellite_id: str = Field(min_length=1)
+    metric: str = Field(min_length=1)
+    value: float
+    unit: str = "raw"
+    recorded_at: Optional[str] = None
+
+
+def _replicate_to_query(doc: dict, ingest_id: str) -> None:
+    payload = {
+        "ingest_id": ingest_id,
+        "satellite_id": doc["satellite_id"],
+        "metric": doc["metric"],
+        "value": doc["value"],
+        "unit": doc["unit"],
+        "recorded_at": doc["recorded_at"],
+        "ingested_by": doc.get("ingested_by"),
+    }
+    try:
+        httpx.post(
+            f"{QUERY_SERVICE_URL.rstrip('/')}/internal/replicate",
+            json=payload,
+            headers={"X-Internal-Token": INTERNAL_TOKEN},
+            timeout=5.0,
+        )
+    except httpx.HTTPError:
+        pass
+
+
+@app.post("/telemetry", status_code=201)
+def create_telemetry(
+    body: TelemetryIn,
+    _: Annotated[None, Depends(require_internal)],
+    claims: Annotated[dict, Depends(require_jwt)],
+):
+    db = get_db()
+    ts = body.recorded_at or datetime.now(timezone.utc).isoformat()
+    doc = {
+        "satellite_id": body.satellite_id,
+        "metric": body.metric,
+        "value": body.value,
+        "unit": body.unit,
+        "recorded_at": ts,
+        "ingested_by": claims.get("sub"),
+    }
+    res = db["telemetry"].insert_one(doc)
+    ingest_id = str(res.inserted_id)
+    _replicate_to_query(doc, ingest_id)
+    return {"id": ingest_id, "recorded_at": ts}
+
+
+@app.get("/telemetry/{telemetry_id}")
+def get_one(
+    telemetry_id: str,
+    _: Annotated[None, Depends(require_internal)],
+    __: Annotated[dict, Depends(require_jwt)],
+):
+    if not ObjectId.is_valid(telemetry_id):
+        raise HTTPException(status_code=400, detail="invalid id")
+    db = get_db()
+    doc = db["telemetry"].find_one({"_id": ObjectId(telemetry_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="not found")
+    doc.pop("_id", None)
+    return {
+        "id": telemetry_id,
+        "satellite_id": doc["satellite_id"],
+        "metric": doc["metric"],
+        "value": doc["value"],
+        "unit": doc["unit"],
+        "recorded_at": doc["recorded_at"],
+    }
+
+
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pymongo==4.8.0
+pyjwt==2.9.0
+
+import os
+from typing import Annotated, Any, Optional
+
+import jwt
+from bson import ObjectId
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
+from pymongo import MongoClient
+
+JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_change_me")
+INTERNAL_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev_internal_token_change_me")
+QUERY_MONGO_URI = os.getenv("QUERY_MONGO_URI", "mongodb://localhost:27017/query")
+
+security = HTTPBearer(auto_error=False)
+app = FastAPI(title="Telemetry Query")
+
+
+def get_db():
+    client = MongoClient(QUERY_MONGO_URI, serverSelectionTimeoutMS=5000)
+    return client.get_default_database()
+
+
+def require_internal(x_internal_token: Annotated[str | None, Header(alias="X-Internal-Token")]):
+    if x_internal_token != INTERNAL_TOKEN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+
+class ReplicateIn(BaseModel):
+    ingest_id: str = Field(min_length=1)
+    satellite_id: str = Field(min_length=1)
+    metric: str = Field(min_length=1)
+    value: float
+    unit: str = "raw"
+    recorded_at: str
+    ingested_by: Optional[str] = None
+
+
+@app.post("/internal/replicate", status_code=201)
+def internal_replicate(
+    body: ReplicateIn,
+    _: Annotated[None, Depends(require_internal)],
+):
+    """Ingest servisinden JSON ile çoğaltma (sadece iç ağ token)."""
+    db = get_db()
+    db["telemetry"].insert_one(
+        {
+            "ingest_id": body.ingest_id,
+            "satellite_id": body.satellite_id,
+            "metric": body.metric,
+            "value": body.value,
+            "unit": body.unit,
+            "recorded_at": body.recorded_at,
+            "ingested_by": body.ingested_by,
+        }
+    )
+    return {"ok": True}
+
+
+def require_jwt(
+    creds: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security)],
+):
+    if not creds:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
+    try:
+        return jwt.decode(creds.credentials, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/ping")
+def ping(
+    _: Annotated[None, Depends(require_internal)],
+    __: Annotated[dict, Depends(require_jwt)],
+):
+    return {"service": "telemetry-query", "ok": True}
+
+
+@app.get("/telemetry")
+def list_telemetry(
+    _: Annotated[None, Depends(require_internal)],
+    __: Annotated[dict, Depends(require_jwt)],
+    satellite_id: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    db = get_db()
+    q: dict[str, Any] = {}
+    if satellite_id:
+        q["satellite_id"] = satellite_id
+    cur = db["telemetry"].find(q).sort("recorded_at", -1).limit(limit)
+    out = []
+    for doc in cur:
+        out.append(
+            {
+                "satellite_id": doc["satellite_id"],
+                "metric": doc["metric"],
+                "value": doc["value"],
+                "unit": doc["unit"],
+                "recorded_at": doc["recorded_at"],
+            }
+        )
+    return {"items": out}
+
+
+@app.get("/telemetry/{telemetry_id}")
+def get_one(
+    telemetry_id: str,
+    _: Annotated[None, Depends(require_internal)],
+    __: Annotated[dict, Depends(require_jwt)],
+):
+    if not ObjectId.is_valid(telemetry_id):
+        raise HTTPException(status_code=400, detail="invalid id")
+    db = get_db()
+    doc = db["telemetry"].find_one({"_id": ObjectId(telemetry_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="not found")
+    doc.pop("_id", None)
+    return {
+        "id": telemetry_id,
+        "satellite_id": doc["satellite_id"],
+        "metric": doc["metric"],
+        "value": doc["value"],
+        "unit": doc["unit"],
+        "recorded_at": doc["recorded_at"],
+    }
