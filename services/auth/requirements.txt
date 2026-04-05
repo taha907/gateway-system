@@ -1,0 +1,7 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pymongo==4.8.0
+pyjwt==2.9.0
+passlib[bcrypt]==1.7.4
+# passlib 1.7.x bcrypt 4.x ile uyumsuz; 500 / verify hatası verebilir
+bcrypt==3.2.2

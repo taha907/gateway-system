@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dispatcher — Telemetri &amp; Trafik logları</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --card: #151b24;
+      --text: #e8edf4;
+      --muted: #8899aa;
+      --line: #2a3544;
+      --accent: #2563eb;
+      --accent2: #059669;
+      --bad: #dc2626;
+      --zebra: rgba(255,255,255,0.03);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.45; }
+    a { color: #93c5fd; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 1rem 1.25rem 2.5rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .lead { color: var(--muted); font-size: 0.92rem; margin: 0 0 1.25rem; max-width: 52rem; }
+    section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    section h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.05rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 0.5rem;
+    }
+    .muted { color: var(--muted); font-size: 0.88rem; margin: 0 0 0.75rem; }
+    label { font-size: 0.75rem; color: var(--muted); display: block; margin-bottom: 0.2rem; }
+    input {
+      width: 100%;
+      max-width: 260px;
+      padding: 0.45rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: #0c0f14;
+      color: var(--text);
+      font: inherit;
+    }
+    .grid2 { display: grid; gap: 0.75rem; }
+    @media (min-width: 520px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+    .row-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.65rem; align-items: center; }
+    .btn {
+      display: inline-block;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: none;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn.secondary { background: #3f4f63; }
+    .btn.ok { background: var(--accent2); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hint { font-size: 0.82rem; color: var(--muted); }
+    .ok { color: var(--accent2); }
+    .err { color: var(--bad); }
+    .log-wrap {
+      overflow: auto;
+      max-height: min(55vh, 480px);
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #0c0f14;
+    }
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    table.data th, table.data td {
+      border-bottom: 1px solid var(--line);
+      padding: 0.45rem 0.55rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    table.data thead th {
+      background: #121820;
+      color: var(--muted);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    table.data tbody tr:nth-child(even) { background: var(--zebra); }
+    .badge { font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; background: #374151; color: #cbd5e1; }
+    details.tech { margin-top: 0.75rem; font-size: 0.8rem; color: var(--muted); }
+    details.tech pre {
+      margin: 0.4rem 0 0;
+      padding: 0.65rem;
+      background: #0c0f14;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: auto;
+      max-height: 160px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.72rem;
+    }
+    .callout {
+      background: #1e293b;
+      border-left: 3px solid var(--accent);
+      padding: 0.65rem 0.85rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.86rem;
+      color: #cbd5e1;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Dispatcher kontrol paneli</h1>
+    <p class="lead">
+      <strong>Grafikler</strong> için Grafana ayrı adrestir. Bu sayfada telemetri girilir ve Dispatcher’ın MongoDB’de tuttuğu
+      <strong>trafik logları tablo</strong> olarak gösterilir (ödev 4.3: detaylı log tablosu).
+    </p>
+
+    <section>
+      <h2>1) Grafana — grafiksel trafik</h2>
+      <p class="muted">İstek hızı, gecikme vb. metrikler.</p>
+      <a class="btn ok" href="http://localhost:3000" target="_blank" rel="noopener">Grafana’yı aç</a>
+      <span class="hint" style="margin-left:0.5rem">(genelde admin / admin)</span>
+    </section>
+
+    <section>
+      <h2>2) Oturum</h2>
+      <div class="grid2">
+        <div><label>Kullanıcı</label><input id="user" type="text" value="admin" autocomplete="username" /></div>
+        <div><label>Şifre</label><input id="pass" type="password" value="admin123" autocomplete="current-password" /></div>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="btn" id="btnLogin">Giriş</button>
+        <button type="button" class="btn secondary" id="btnLogout">Çıkış</button>
+        <span class="hint" id="loginStatus"></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>3) Telemetri gönder</h2>
+      <div class="grid2">
+        <div><label>Uydu ID</label><input id="sat" value="SAT-1" /></div>
+        <div><label>Metrik</label><input id="metric" value="battery_v" /></div>
+        <div><label>Değer</label><input id="val" type="number" step="any" value="12.4" /></div>
+        <div><label>Birim</label><input id="unit" value="V" /></div>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="btn" id="btnSend">Gönder</button>
+        <span class="hint" id="ingestStatus"></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>4) Telemetri listesi (okuma)</h2>
+      <div class="row-actions">
+        <button type="button" class="btn secondary" id="btnQuery">Listeyi yükle</button>
+        <span class="hint" id="queryStatus"></span>
+      </div>
+      <div class="log-wrap" style="margin-top:0.6rem">
+        <table class="data" aria-label="Telemetri">
+          <thead><tr><th>Uydu</th><th>Metrik</th><th>Değer</th><th>Birim</th><th>Zaman</th></tr></thead>
+          <tbody id="telBody"><tr><td colspan="5" class="hint">Giriş yapıp “Listeyi yükle” deyin.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>5) Dispatcher trafik logları <span class="badge">tablo</span></h2>
+      <p class="muted">Kaynak: <code>/admin/logs/json</code> (giriş gerekir). Özet alanlar tabloda; ham veri isteğe bağlı aşağıda.</p>
+      <div class="row-actions">
+        <button type="button" class="btn secondary" id="btnLogs">Logları tabloya yükle</button>
+        <span class="hint" id="logsStatus"></span>
+      </div>
+      <div class="log-wrap" style="margin-top:0.6rem">
+        <table class="data" aria-label="Dispatcher logları">
+          <thead>
+            <tr>
+              <th>Zaman (UTC)</th>
+              <th>Metot</th>
+              <th>Yol</th>
+              <th>HTTP</th>
+              <th>ms</th>
+              <th>Yetki özeti</th>
+              <th>Kullanıcı</th>
+              <th>İstemci</th>
+            </tr>
+          </thead>
+          <tbody id="logBody">
+            <tr><td colspan="8" class="hint">Giriş yapıp “Logları tabloya yükle” deyin.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <details class="tech">
+        <summary>Ham JSON (isteğe bağlı)</summary>
+        <pre id="logsRaw">—</pre>
+      </details>
+    </section>
+  </div>
+
+  <script>
+    const BASE = "";
+    const KEY = "telemetry_jwt";
+
+    function getToken() { return sessionStorage.getItem(KEY) || ""; }
+    function setToken(t) {
+      if (t) sessionStorage.setItem(KEY, t);
+      else sessionStorage.removeItem(KEY);
+    }
+
+    function td(text) {
+      const c = document.createElement("td");
+      c.textContent = text == null || text === "" ? "—" : String(text);
+      return c;
+    }
+
+    async function parseJson(r) {
+      const raw = await r.text();
+      try { return { j: JSON.parse(raw), raw }; } catch { return { j: null, raw }; }
+    }
+
+    document.getElementById("btnLogin").onclick = async () => {
+      const st = document.getElementById("loginStatus");
+      const u = document.getElementById("user").value.trim();
+      const p = document.getElementById("pass").value;
+      try {
+        const r = await fetch(BASE + "/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ username: u, password: p }),
+        });
+        const { j, raw } = await parseJson(r);
+        if (!r.ok) {
+          st.innerHTML = "<span class='err'>HTTP " + r.status + "</span> " + (j && j.detail ? String(j.detail) : raw.slice(0, 120));
+          return;
+        }
+        setToken(j.access_token);
+        st.innerHTML = "<span class='ok'>Giriş tamam</span> · HTTP " + r.status;
+      } catch (e) {
+        st.innerHTML = "<span class='err'>" + String(e) + "</span>";
+      }
+    };
+
+    document.getElementById("btnLogout").onclick = () => {
+      setToken("");
+      document.getElementById("loginStatus").textContent = "Çıkış yapıldı.";
+    };
+
+    document.getElementById("btnSend").onclick = async () => {
+      const tok = getToken();
+      const st = document.getElementById("ingestStatus");
+      if (!tok) { st.innerHTML = "<span class='err'>Önce giriş yapın.</span>"; return; }
+      const payload = {
+        satellite_id: document.getElementById("sat").value.trim(),
+        metric: document.getElementById("metric").value.trim(),
+        value: Number(document.getElementById("val").value),
+        unit: document.getElementById("unit").value.trim() || "raw",
+      };
+      try {
+        const r = await fetch(BASE + "/api/telemetry/ingest/telemetry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok },
+          body: JSON.stringify(payload),
+        });
+        const { j } = await parseJson(r);
+        st.innerHTML = r.ok ? "<span class='ok'>Gönderildi (HTTP " + r.status + ")</span>" : "<span class='err'>HTTP " + r.status + "</span> " + (j && j.detail ? j.detail : "");
+      } catch (e) {
+        st.innerHTML = "<span class='err'>" + String(e) + "</span>";
+      }
+    };
+
+    function fillTelemetryTable(rows) {
+      const tb = document.getElementById("telBody");
+      tb.replaceChildren();
+      if (!rows || !rows.length) {
+        const tr = document.createElement("tr");
+        const c = document.createElement("td");
+        c.colSpan = 5;
+        c.className = "hint";
+        c.textContent = "Kayıt yok.";
+        tr.appendChild(c);
+        tb.appendChild(tr);
+        return;
+      }
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.appendChild(td(row.satellite_id));
+        tr.appendChild(td(row.metric));
+        tr.appendChild(td(row.value));
+        tr.appendChild(td(row.unit));
+        tr.appendChild(td(row.recorded_at));
+        tb.appendChild(tr);
+      });
+    }
+
+    document.getElementById("btnQuery").onclick = async () => {
+      const tok = getToken();
+      const st = document.getElementById("queryStatus");
+      if (!tok) { st.innerHTML = "<span class='err'>Önce giriş yapın.</span>"; return; }
+      try {
+        const r = await fetch(BASE + "/api/telemetry/query/telemetry", { headers: { Authorization: "Bearer " + tok } });
+        const { j, raw } = await parseJson(r);
+        st.innerHTML = r.ok ? "<span class='ok'>Yüklendi (HTTP " + r.status + ")</span>" : "<span class='err'>HTTP " + r.status + "</span>";
+        let items = [];
+        if (j && Array.isArray(j.items)) items = j.items;
+        else if (Array.isArray(j)) items = j;
+        fillTelemetryTable(items);
+      } catch (e) {
+        st.innerHTML = "<span class='err'>" + String(e) + "</span>";
+      }
+    };
+
+    function fillLogTable(items) {
+      const tb = document.getElementById("logBody");
+      tb.replaceChildren();
+      if (!items || !items.length) {
+        const tr = document.createElement("tr");
+        const c = document.createElement("td");
+        c.colSpan = 8;
+        c.className = "hint";
+        c.textContent = "Kayıt yok (MongoDB boş olabilir veya henüz istek oluşmadı).";
+        tr.appendChild(c);
+        tb.appendChild(tr);
+        return;
+      }
+      items.forEach((row) => {
+        const tr = document.createElement("tr");
+        const pathCell = td(row.path);
+        const q = row.q != null && row.q !== "" ? row.q : row.query_string;
+        if (q) pathCell.textContent = String(row.path || "—") + "?" + String(q);
+        tr.appendChild(td(row.ts));
+        tr.appendChild(td(row.method));
+        tr.appendChild(pathCell);
+        tr.appendChild(td(row.status != null ? row.status : row.status_code));
+        tr.appendChild(td(row.ms != null ? row.ms : row.latency_ms));
+        tr.appendChild(td(row.auth != null ? row.auth : row.auth_result));
+        tr.appendChild(td(row.user));
+        tr.appendChild(td(row.ip != null ? row.ip : row.client_host));
+        tb.appendChild(tr);
+      });
+    }
+
+    document.getElementById("btnLogs").onclick = async () => {
+      const tok = getToken();
+      const st = document.getElementById("logsStatus");
+      const rawEl = document.getElementById("logsRaw");
+      if (!tok) {
+        st.innerHTML = "<span class='err'>Önce giriş yapın.</span>";
+        return;
+      }
+      st.innerHTML = "Yükleniyor…";
+      rawEl.textContent = "—";
+      try {
+        const r = await fetch(BASE + "/admin/logs/json", {
+          headers: { Authorization: "Bearer " + tok },
+          credentials: "same-origin",
+        });
+        const { j, raw } = await parseJson(r);
+        rawEl.textContent = j ? JSON.stringify(j) : raw.slice(0, 4000);
+        if (!r.ok) {
+          st.innerHTML = "<span class='err'>HTTP " + r.status + "</span>";
+          fillLogTable([]);
+          return;
+        }
+        let items = [];
+        if (j && Array.isArray(j.items)) items = j.items;
+        else if (j && Array.isArray(j.data)) items = j.data;
+        else if (Array.isArray(j)) items = j;
+        fillLogTable(items);
+        st.innerHTML = "<span class='ok'>" + items.length + " satır tabloda.</span>";
+      } catch (e) {
+        st.innerHTML = "<span class='err'>" + String(e) + "</span>";
+        fillLogTable([]);
+      }
+    };
+  </script>
+</body>
+</html>

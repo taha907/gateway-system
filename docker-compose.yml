@@ -1,0 +1,213 @@
+name: yazlab-telemetry
+
+networks:
+  public:
+  internal:
+    internal: true
+
+services:
+  dispatcher:
+    build:
+      context: ./services/dispatcher
+    environment:
+      DISPATCHER_MONGO_URI: mongodb://mongo_dispatcher:27017/dispatcher
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev_internal_token_change_me}
+      AUTH_SERVICE_URL: http://auth:8000
+      INGEST_SERVICE_URL: http://telemetry-ingest:8000
+      QUERY_SERVICE_URL: http://telemetry-query:8000
+    depends_on:
+      mongo_dispatcher:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      telemetry-ingest:
+        condition: service_healthy
+      telemetry-query:
+        condition: service_healthy
+    ports:
+      - "8080:8000"
+    networks:
+      - public
+      - internal
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  auth:
+    build:
+      context: ./services/auth
+    environment:
+      AUTH_MONGO_URI: mongodb://mongo_auth:27017/auth
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev_internal_token_change_me}
+    depends_on:
+      mongo_auth:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    networks:
+      - internal
+
+  telemetry-ingest:
+    build:
+      context: ./services/telemetry_ingest
+    environment:
+      INGEST_MONGO_URI: mongodb://mongo_ingest:27017/ingest
+      QUERY_SERVICE_URL: http://telemetry-query:8000
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev_internal_token_change_me}
+    depends_on:
+      mongo_ingest:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    networks:
+      - internal
+
+  telemetry-query:
+    build:
+      context: ./services/telemetry_query
+    environment:
+      QUERY_MONGO_URI: mongodb://mongo_query:27017/query
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev_internal_token_change_me}
+    depends_on:
+      mongo_query:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    networks:
+      - internal
+
+  mongo_dispatcher:
+    image: mongo:7
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_dispatcher_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  mongo_auth:
+    image: mongo:7
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_auth_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  mongo_ingest:
+    image: mongo:7
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_ingest_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  mongo_query:
+    image: mongo:7
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo_query_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    depends_on:
+      dispatcher:
+        condition: service_healthy
+    networks:
+      - internal
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    networks:
+      - public
+      - internal
+
+volumes:
+  mongo_dispatcher_data:
+  mongo_auth_data:
+  mongo_ingest_data:
+  mongo_query_data:
+  grafana_data:
+
