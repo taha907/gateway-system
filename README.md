@@ -6,10 +6,8 @@
 |---|---|
 | **Proje adı** | Uydu Telemetri İzleme Sistemi — Dispatcher (API Gateway) ve Mikroservisler |
 | **Ders / bağlam** | Yazılım Laboratuvarı — Dağıtık sistem, mikroservis, API Gateway |
-| **Ekip üyeleri** | *[Ad Soyad 1, Öğrenci No]* |
-| | *[Ad Soyad 2, Öğrenci No]* — *gerekiyorsa ekleyin* |
+| **Ekip üyeleri** | *[Muhammed Taha Kızıkoğlu, 241307121]* |
 | **Tarih** | Nisan 2026 |
-| **Kod deposu** | GitHub (Markdown rapor: bu dosya) |
 
 ---
 
@@ -17,7 +15,7 @@
 
 ### 2.1 Problem
 
-Telemetri (batarya, sensör vb.) verisinin güvenle kaydedilip sorgulanması ve dışarıdan tek kapıdan erişim, laboratuvar kapsamında **mikroservis + API Gateway** ile ele alınmıştır. Tek parça uygulama yerine ingest / query / auth ayrımı, hem ödev isterlerine hem de yük dağılımını denemeye uygun.
+Telemetri (batarya, sensör vb.) verisinin güvenle kaydedilip sorgulanması ve dışarıdan tek kapıdan erişim, laboratuvar kapsamında **mikroservis + API Gateway** yapısı ile kurulmuştur.
 
 ### 2.2 Amaç
 
@@ -253,16 +251,23 @@ Erişim adresleri:
 | Grafana | http://localhost:3000 (varsayılan: admin / admin) |
 | Sağlık kontrolü | http://localhost:8080/health |
 
-### 5.2 Ekran görüntüleri (rapora yapıştırın)
 
-> Aşağıdaki maddeleri kendi ekran görüntülerinizle doldurun; GitHub’da `README` içinde görsel eklemek için `![açıklama](./docs/ekran1.png)` gibi göreli yollar kullanabilirsiniz.
 
-1. **Docker Compose:** Çalışan servisler listesi (`docker compose ps`) veya Docker Desktop ekranı — *iç servislerde host portu olmadığını* gösterir.
-2. **Ağ izolasyonu:** Mümkünse dışarıdan `auth:8000` vb. erişilemediğini gösteren deneme (bağlantı hatası) — *raporda açıklayın*.
-3. **`/ui`:** Giriş yapılmış hali, telemetri gönderme ve liste tablosu.
-4. **`/ui`:** Dispatcher trafik logları tablosu.
-5. **Grafana:** Dispatcher istek oranı / gecikme panosu.
-6. **(İsteğe bağlı)** `http://localhost:8080/docs` — OpenAPI (ortamda açıksa).
+
+ **Docker Compose:** Çalışan servisler listesi (`docker compose ps`) veya Docker Desktop ekranı — *iç servislerde host portu olmadığını* gösterir.
+ <img width="1233" height="519" alt="Ekran görüntüsü 2026-04-06 013316" src="https://github.com/user-attachments/assets/86ff617f-b2a4-49d8-80b5-1ba0474bff5f" />
+
+ **Ağ izolasyonu:** Mümkünse dışarıdan `auth:8000` vb. erişilemediğini gösteren deneme (bağlantı hatası) — *raporda açıklayın*.
+ **`/ui`:** Giriş yapılmış hali, telemetri gönderme ve liste tablosu.
+ **`/ui`:** Dispatcher trafik logları tablosu.
+ **Grafana:** Dispatcher istek oranı / gecikme panosu.
+
+ <img width="1522" height="394" alt="Ekran görüntüsü 2026-04-06 013053" src="https://github.com/user-attachments/assets/d507f0a5-b201-4733-bb77-8f1e4fad57be" />
+<img width="1316" height="615" alt="Ekran görüntüsü 2026-04-06 013111" src="https://github.com/user-attachments/assets/8af34af3-760f-4ead-bee8-2d4af7dbae3f" />
+<img width="1330" height="650" alt="Ekran görüntüsü 2026-04-06 013117" src="https://github.com/user-attachments/assets/b281f603-baa2-4a49-874d-cb2be306515b" />
+<img width="1308" height="716" alt="Ekran görüntüsü 2026-04-06 013125" src="https://github.com/user-attachments/assets/bbbef917-384f-4c19-9945-63297b36262b" />
+
+
 
 ### 5.3 Test senaryoları ve sonuçlar
 
@@ -311,6 +316,9 @@ $r = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/auth/login" 
 Betikte tanımlı eşikler (threshold): `http_req_failed` oranı %5’ten az, `http_req_duration` p(95) 2000 ms altı. Bu koşuda ikisi de geçti.
 
 **Ölçülen sonuçlar (özet):**
+<img width="1066" height="865" alt="Ekran görüntüsü 2026-04-06 011336" src="https://github.com/user-attachments/assets/37a077fa-a02f-41e9-8080-7d4f725e4930" />
+<img width="1017" height="845" alt="Ekran görüntüsü 2026-04-06 011350" src="https://github.com/user-attachments/assets/99cc02bd-68d3-4c5a-b391-140aa6aacb64" />
+
 
 | Metrik | Değer |
 |--------|--------|
